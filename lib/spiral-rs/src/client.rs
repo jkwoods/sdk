@@ -891,7 +891,7 @@ impl<'a> Client<'a> {
             for c in 0..db_item.cols {
                 let poly = db_item.get_poly_mut(r, c);
                 for z in 0..poly.len() {
-                    poly[z] = (poly[z] + Self::concat_u8s_into_u64(masks_bytes_chunks.next().unwrap()))
+                    poly[z] = (poly[z] - Self::concat_u8s_into_u64(masks_bytes_chunks.next().unwrap()))
                         % params.pt_modulus;
                 }
             }
