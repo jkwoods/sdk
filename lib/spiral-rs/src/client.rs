@@ -809,7 +809,7 @@ impl<'a> Client<'a> {
         result.to_vec(p_bits as usize, params.modp_words_per_chunk())
     }
 
-        pub fn modified_decode_response(&self, data: &[u8], num_cts: usize, masks_bytes: Vec<u8>) -> Vec<u8> {
+      pub fn modified_decode_response(&self, data: &[u8], masks_bytes: Vec<u8>) -> Vec<u8> {
         /*
             0. NTT over q2 the secret key
 
@@ -830,22 +830,17 @@ impl<'a> Client<'a> {
         let q2_params = params_with_moduli(params, &vec![q2]);
 
         // this only needs to be done during keygen
-        let mut sk_q2 = PolyMatrixRaw::zero(&q2_params, params.n, 1);
-        let key_to_use = if params.db_dim_2 > 0 && params.version != 3 {
-            &self.sk_gsw
-        } else {
-            &self.sk_reg
-        };
+        let mut sk_gsw_q2 = PolyMatrixRaw::zero(&q2_params, params.n, 1);
         for i in 0..params.poly_len * params.n {
-            sk_q2.data[i] = recenter(key_to_use.data[i], params.modulus, q2);
+            sk_gsw_q2.data[i] = recenter(self.sk_gsw.data[i], params.modulus, q2);
         }
-        let mut sk_q2_ntt = PolyMatrixNTT::zero(&q2_params, params.n, 1);
-        to_ntt(&mut sk_q2_ntt, &sk_q2);
+        let mut sk_gsw_q2_ntt = PolyMatrixNTT::zero(&q2_params, params.n, 1);
+        to_ntt(&mut sk_gsw_q2_ntt, &sk_gsw_q2);
 
-        let mut result = PolyMatrixRaw::zero(&params, num_cts * params.n, params.n);
+        let mut result = PolyMatrixRaw::zero(&params, params.instances * params.n, params.n);
 
         let mut bit_offs = 0;
-        for instance in 0..num_cts {
+        for instance in 0..params.instances {
             // this must be done during decoding
             let mut first_row = PolyMatrixRaw::zero(&q2_params, 1, params.n);
             let mut rest_rows = PolyMatrixRaw::zero(&params, params.n, params.n);
@@ -861,7 +856,7 @@ impl<'a> Client<'a> {
             let mut first_row_q2 = PolyMatrixNTT::zero(&q2_params, 1, params.n);
             to_ntt(&mut first_row_q2, &first_row);
 
-            let sk_prod = (&sk_q2_ntt * &first_row_q2).raw();
+            let sk_prod = (&sk_gsw_q2_ntt * &first_row_q2).raw();
 
             let q1_i64 = q1 as i64;
             let q2_i64 = q2 as i64;
