@@ -16,6 +16,10 @@ use crate::util::*;
 
 use rayon::prelude::*;
 
+pub fn single_thread() {
+    std::env::set_var("RAYON_NUM_THREADS", "1");
+}
+
 pub fn coefficient_expansion(
     v: &mut Vec<PolyMatrixNTT>,
     g: usize,
