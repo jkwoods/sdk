@@ -1,5 +1,3 @@
-env::set_var("RAYON_NUM_THREADS", "1");
-
 pub mod aligned_memory;
 pub mod arith;
 pub mod discrete_gaussian;
