@@ -1,7 +1,9 @@
+use serde::{ser::SerializeSeq, Deserialize, Deserializer, Serialize, Serializer};
 use std::{
     alloc::{alloc_zeroed, dealloc, Layout},
     mem::size_of,
     ops::{Index, IndexMut},
+    ptr,
     slice::{from_raw_parts, from_raw_parts_mut},
 };
 
@@ -12,6 +14,53 @@ pub struct AlignedMemory<const ALIGN: usize> {
     p: *mut u64,
     sz_u64: usize,
     layout: Layout,
+}
+
+impl<const ALIGN: usize> Serialize for AlignedMemory<ALIGN> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let slice: &[u64] = unsafe { from_raw_parts(self.p, self.sz_u64) };
+
+        let mut seq = serializer.serialize_seq(Some(self.sz_u64))?;
+        for &item in slice {
+            seq.serialize_element(&item)?;
+        }
+        seq.end()
+    }
+}
+
+impl<'de, const ALIGN: usize> Deserialize<'de> for AlignedMemory<ALIGN> {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        // Deserialize as a vector of u64s
+        let vec: Vec<u64> = Vec::deserialize(deserializer)?;
+
+        // Get the size of the vector
+        let sz_u64 = vec.len();
+
+        // Allocate memory with the required alignment
+        let sz_bytes = sz_u64 * size_of::<u64>();
+        let layout = Layout::from_size_align(sz_bytes, ALIGN).map_err(serde::de::Error::custom)?;
+
+        let p = unsafe {
+            let ptr = alloc_zeroed(layout) as *mut u64;
+            if ptr.is_null() {
+                std::alloc::handle_alloc_error(layout);
+            }
+            ptr
+        };
+
+        // Copy the deserialized values into the allocated memory
+        unsafe {
+            ptr::copy_nonoverlapping(vec.as_ptr(), p, sz_u64);
+        }
+
+        Ok(AlignedMemory { p, sz_u64, layout })
+    }
 }
 
 impl<const ALIGN: usize> AlignedMemory<{ ALIGN }> {

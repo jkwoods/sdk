@@ -1,9 +1,11 @@
 use crate::{
     arith::*, discrete_gaussian::*, gadget::*, number_theory::*, params::*, poly::*, util::*,
 };
+use either::{Either, Left, Right};
 use rand::seq::SliceRandom;
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha20Rng;
+use serde::{Deserialize, Serialize};
 use std::{iter::once, mem::size_of};
 use subtle::ConditionallySelectable;
 use subtle::ConstantTimeEq;
@@ -49,12 +51,20 @@ fn get_inv_from_rng(params: &Params, rng: &mut ChaCha20Rng) -> u64 {
 }
 
 fn mat_sz_bytes_excl_first_row(a: &PolyMatrixRaw) -> usize {
-    (a.rows - 1) * a.cols * a.params.poly_len * size_of::<u64>()
+    match a.params {
+        Left(r) => (a.rows - 1) * a.cols * r.poly_len * size_of::<u64>(),
+        Right(_) => panic!(),
+    }
 }
 
 fn serialize_polymatrix_for_rng(vec: &mut Vec<u8>, a: &PolyMatrixRaw) {
-    let offs = a.cols * a.params.poly_len; // skip the first row
-    for i in 0..(a.rows - 1) * a.cols * a.params.poly_len {
+    let poly_len = match a.params {
+        Left(r) => r.poly_len,
+        Right(_) => panic!(),
+    };
+
+    let offs = a.cols * poly_len; // skip the first row
+    for i in 0..(a.rows - 1) * a.cols * poly_len {
         vec.extend_from_slice(&u64::to_ne_bytes(a.data[offs + i]));
     }
 }
@@ -66,12 +76,14 @@ fn serialize_vec_polymatrix_for_rng(vec: &mut Vec<u8>, a: &Vec<PolyMatrixRaw>) {
 }
 
 fn deserialize_polymatrix_rng(a: &mut PolyMatrixRaw, data: &[u8], rng: &mut ChaCha20Rng) -> usize {
-    let (first_row, rest) = a
-        .data
-        .as_mut_slice()
-        .split_at_mut(a.cols * a.params.poly_len);
+    let (a_params, poly_len) = match a.params {
+        Left(r) => (r, r.poly_len),
+        Right(_) => panic!(),
+    };
+
+    let (first_row, rest) = a.data.as_mut_slice().split_at_mut(a.cols * poly_len);
     for i in 0..first_row.len() {
-        first_row[i] = get_inv_from_rng(a.params, rng);
+        first_row[i] = get_inv_from_rng(a_params, rng);
     }
     for (i, chunk) in data.chunks(size_of::<u64>()).enumerate() {
         rest[i] = u64::from_ne_bytes(chunk.try_into().unwrap());
@@ -128,7 +140,10 @@ fn interleave_rng_data(params: &Params, v_buf: &[u64], rng: &mut ChaCha20Rng) ->
 }
 
 fn gen_ternary_mat(mat: &mut PolyMatrixRaw, hamming: usize, rng: &mut ChaCha20Rng) {
-    let modulus = mat.params.modulus;
+    let modulus = match mat.params {
+        Left(r) => r.modulus,
+        Right(_) => panic!(),
+    };
     for r in 0..mat.rows {
         for c in 0..mat.cols {
             let pol = mat.get_poly_mut(r, c);
@@ -143,6 +158,7 @@ fn gen_ternary_mat(mat: &mut PolyMatrixRaw, hamming: usize, rng: &mut ChaCha20Rn
     }
 }
 
+#[derive(Deserialize, Serialize)]
 pub struct PublicParameters<'a> {
     pub v_packing: Vec<PolyMatrixNTT<'a>>, // Ws
     pub v_expansion_left: Option<Vec<PolyMatrixNTT<'a>>>,
@@ -259,6 +275,7 @@ impl<'a> PublicParameters<'a> {
     }
 }
 
+#[derive(Deserialize, Serialize)]
 pub struct Query<'a> {
     pub ct: Option<PolyMatrixRaw<'a>>,
     pub v_buf: Option<Vec<u64>>,
@@ -330,10 +347,15 @@ impl<'a> Query<'a> {
 }
 
 pub fn matrix_with_identity<'a>(p: &PolyMatrixRaw<'a>) -> PolyMatrixRaw<'a> {
+    let params = match p.params {
+        Left(r) => r,
+        Right(_) => panic!(),
+    };
+
     assert_eq!(p.cols, 1);
-    let mut r = PolyMatrixRaw::zero(p.params, p.rows, p.rows + 1);
+    let mut r = PolyMatrixRaw::zero(params, p.rows, p.rows + 1);
     r.copy_into(p, 0, 0);
-    r.copy_into(&PolyMatrixRaw::identity(p.params, p.rows, p.rows), 0, 1);
+    r.copy_into(&PolyMatrixRaw::identity(params, p.rows, p.rows), 0, 1);
     r
 }
 
@@ -809,7 +831,7 @@ impl<'a> Client<'a> {
         result.to_vec(p_bits as usize, params.modp_words_per_chunk())
     }
 
-      pub fn modified_decode_response(&self, data: &[u8], masks_bytes: Vec<u8>) -> Vec<u8> {
+    pub fn modified_decode_response(&self, data: &[u8], masks_bytes: Vec<u8>) -> Vec<u8> {
         /*
             0. NTT over q2 the secret key
 
@@ -891,7 +913,8 @@ impl<'a> Client<'a> {
             for c in 0..db_item.cols {
                 let poly = db_item.get_poly_mut(r, c);
                 for z in 0..poly.len() {
-                    poly[z] = (poly[z] - Self::concat_u8s_into_u64(masks_bytes_chunks.next().unwrap()))
+                    poly[z] = (poly[z]
+                        - Self::concat_u8s_into_u64(masks_bytes_chunks.next().unwrap()))
                         % params.pt_modulus;
                 }
             }
@@ -903,14 +926,14 @@ impl<'a> Client<'a> {
     }
 
     fn concat_u8s_into_u64(bytes: &[u8]) -> u64 {
-    assert_eq!(bytes.len(), 8);
+        assert_eq!(bytes.len(), 8);
 
-    let mut result = 0u64;
-    for (i, &byte) in bytes.iter().enumerate() {
-        result |= (byte as u64) << (56 - i * 8);
+        let mut result = 0u64;
+        for (i, &byte) in bytes.iter().enumerate() {
+            result |= (byte as u64) << (56 - i * 8);
+        }
+        result
     }
-    result
-}
 }
 
 #[cfg(test)]

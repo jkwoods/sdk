@@ -1,4 +1,5 @@
 use crate::{params::*, poly::*};
+use either::{Either, Left, Right};
 
 pub fn get_bits_per(params: &Params, dim: usize) -> usize {
     let modulus_log2 = params.modulus_log2;
@@ -16,7 +17,10 @@ pub fn build_gadget(params: &Params, rows: usize, cols: usize) -> PolyMatrixRaw 
     assert_eq!(m % nx, 0);
 
     let num_elems = m / nx;
-    let params = g.params;
+    let params = match g.params {
+        Left(r) => r,
+        Right(_) => panic!(),
+    };
     let bits_per = get_bits_per(params, num_elems);
 
     for i in 0..nx {
@@ -34,7 +38,10 @@ pub fn build_gadget(params: &Params, rows: usize, cols: usize) -> PolyMatrixRaw 
 pub fn gadget_invert_rdim<'a>(out: &mut PolyMatrixRaw<'a>, inp: &PolyMatrixRaw<'a>, rdim: usize) {
     assert_eq!(out.cols, inp.cols);
 
-    let params = inp.params;
+    let params = match inp.params {
+        Left(r) => r,
+        Right(_) => panic!(),
+    };
     let mx = out.rows;
     let num_elems = mx / rdim;
     let bits_per = get_bits_per(params, num_elems);
@@ -64,7 +71,10 @@ pub fn gadget_invert<'a>(out: &mut PolyMatrixRaw<'a>, inp: &PolyMatrixRaw<'a>) {
 }
 
 pub fn gadget_invert_alloc<'a>(mx: usize, inp: &PolyMatrixRaw<'a>) -> PolyMatrixRaw<'a> {
-    let mut out = PolyMatrixRaw::zero(inp.params, mx, inp.cols);
+    let mut out = match inp.params {
+        Left(r) => PolyMatrixRaw::zero(r, mx, inp.cols),
+        Right(_) => panic!(),
+    };
     gadget_invert(&mut out, inp);
     out
 }

@@ -2,6 +2,8 @@ use std::mem::size_of;
 
 use crate::{arith::*, client::SEED_LENGTH, ntt::*, number_theory::*, poly::*};
 
+use serde::{Deserialize, Serialize};
+
 pub const MAX_MODULI: usize = 4;
 
 pub static MIN_Q2_BITS: u64 = 14;
@@ -45,7 +47,7 @@ pub static Q2_VALUES: [u64; 37] = [
     68718428161,
 ];
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
 pub struct Params {
     pub poly_len: usize,
     pub poly_len_log2: usize,
