@@ -831,6 +831,16 @@ impl<'a> Client<'a> {
         result.to_vec(p_bits as usize, params.modp_words_per_chunk())
     }
 
+    pub fn concat_u8s_into_u64(bytes: &[u8]) -> u64 {
+        assert_eq!(bytes.len(), 8);
+
+        let mut result = 0u64;
+        for (i, &byte) in bytes.iter().enumerate() {
+            result |= (byte as u64) << (56 - i * 8);
+        }
+        result
+    }
+    
     pub fn modified_decode_response_ntt(&self, data: &[u8], masks_bytes: Vec<u8>) -> Vec<u8> {
         /*
             0. NTT over q2 the secret key
@@ -894,8 +904,8 @@ impl<'a> Client<'a> {
                         poly[z] = (poly[z]
                             - (concat_u8s_into_u64(
                                 masks_bytes_chunks.next().unwrap(),
-                            ) % spiral_params.pt_modulus))
-                            % spiral_params.pt_modulus;
+                            ) % params.pt_modulus))
+                            % params.pt_modulus;
                     }
                 }
             }
