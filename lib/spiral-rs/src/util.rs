@@ -4,6 +4,16 @@ use rand_chacha::ChaCha20Rng;
 use serde_json::Value;
 use std::fs;
 
+pub fn compose_bytes(bytes: &[u8]) -> u64 {
+    assert_eq!(bytes.len(), 8);
+
+    let mut result = 0u64;
+    for (i, &byte) in bytes.iter().enumerate() {
+        result |= (byte as u64) << (56 - i * 8);
+    }
+    result
+}
+
 pub const CFG_20_256: &'static str = r#"
         {'n': 2,
         'nu_1': 9,
