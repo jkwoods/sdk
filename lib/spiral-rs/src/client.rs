@@ -831,6 +831,107 @@ impl<'a> Client<'a> {
         result.to_vec(p_bits as usize, params.modp_words_per_chunk())
     }
 
+    pub fn modified_decode_response_ntt(&self, data: &[u8], masks_bytes: Vec<u8>) -> Vec<u8> {
+        /*
+            0. NTT over q2 the secret key
+
+            1. read first row in q2_bit chunks
+            2. read rest in q1_bit chunks
+            3. NTT over q2 the first row
+            4. Multiply the results of (0) and (3)
+            5. Divide and round correctly
+        */
+        let params = self.params;
+        let p = params.pt_modulus;
+        let p_bits = log2_ceil(params.pt_modulus);
+        let q1 = 4 * params.pt_modulus;
+        let q1_bits = log2_ceil(q1) as usize;
+        let q2 = Q2_VALUES[params.q2_bits as usize];
+        let q2_bits = params.q2_bits as usize;
+
+        let q2_params = params_with_moduli(params, &vec![q2]);
+
+        // this only needs to be done during keygen
+        let mut sk_gsw_q2 = PolyMatrixRaw::zero(&q2_params, params.n, 1);
+        for i in 0..params.poly_len * params.n {
+            sk_gsw_q2.data[i] = recenter(self.sk_gsw.data[i], params.modulus, q2);
+        }
+        let mut sk_gsw_q2_ntt = PolyMatrixNTT::zero(&q2_params, params.n, 1);
+        to_ntt(&mut sk_gsw_q2_ntt, &sk_gsw_q2);
+
+        let mut result = PolyMatrixRaw::zero(&params, params.instances * params.n, params.n);
+
+        let mut bit_offs = 0;
+        for instance in 0..params.instances {
+            // this must be done during decoding
+            let mut first_row = PolyMatrixRaw::zero(&q2_params, 1, params.n);
+            let mut rest_rows = PolyMatrixRaw::zero(&params, params.n, params.n);
+            for i in 0..params.n * params.poly_len {
+                // read_arbtrary_bits parse data (in bytes) to raw poly
+                first_row.data[i] = read_arbitrary_bits(data, bit_offs, q2_bits);
+                bit_offs += q2_bits;
+            }
+            for i in 0..params.n * params.n * params.poly_len {
+                rest_rows.data[i] = read_arbitrary_bits(data, bit_offs, q1_bits);
+                bit_offs += q1_bits;
+            }
+
+            let mut first_row_q2 = PolyMatrixNTT::zero(&q2_params, 1, params.n);
+            // Copy first_row to first_row_q2 in NTT form
+            to_ntt(&mut first_row_q2, &first_row);
+
+            // Multiplication in NTT form, and transform to RAW
+            // let sk_prod = (&sk_gsw_q2_ntt * &first_row_q2).raw();
+
+            // New Attempt: put sk_prod as NTT form, remove the mask, and transform to RAW
+            let sk_prod_ntt = (&sk_gsw_q2_ntt * &first_row_q2);
+            let mut masks_bytes_chunks = masks_bytes.chunks(8);
+            for r in 0..sk_prod.rows {
+                for c in 0..sk_prod.cols {
+                    // Poly is a mut pointer 
+                    let poly = sk_prod_ntt.get_poly_mut(r, c);
+                    for z in 0..poly.len() {
+                        poly[z] = (poly[z]
+                            - (concat_u8s_into_u64(
+                                masks_bytes_chunks.next().unwrap(),
+                            ) % spiral_params.pt_modulus))
+                            % spiral_params.pt_modulus;
+                    }
+                }
+            }
+            let mut sk_prod = sk_prod_ntt.raw();
+
+            let q1_i64 = q1 as i64;
+            let q2_i64 = q2 as i64;
+            let p_i128 = p as i128;
+            for i in 0..params.n * params.n * params.poly_len {
+                let mut val_first = sk_prod.data[i] as i64;
+                if val_first >= q2_i64 / 2 {
+                    val_first -= q2_i64;
+                }
+                let mut val_rest = rest_rows.data[i] as i64;
+                if val_rest >= q1_i64 / 2 {
+                    val_rest -= q1_i64;
+                }
+
+                let denom = (q2 * (q1 / p)) as i64;
+
+                let mut r = val_first * q1_i64;
+                r += val_rest * q2_i64;
+
+                // divide r by q2, rounding
+                let sign: i64 = if r >= 0 { 1 } else { -1 };
+                let mut res = ((r + sign * (denom / 2)) as i128) / (denom as i128);
+                res = (res + (denom as i128 / p_i128) * (p_i128) + 2 * (p_i128)) % (p_i128);
+                let idx = instance * params.n * params.n * params.poly_len + i;
+                result.data[idx] = res as u64;
+            }
+        }
+
+        // println!("{:?}", result.data.as_slice().to_vec());
+        result.to_vec(p_bits as usize, params.modp_words_per_chunk())
+    }
+
     pub fn modified_decode_response(&self, data: &[u8], masks_bytes: Vec<u8>) -> Vec<u8> {
         /*
             0. NTT over q2 the secret key
