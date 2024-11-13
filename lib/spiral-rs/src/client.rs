@@ -884,7 +884,7 @@ impl<'a> Client<'a> {
             // let sk_prod = (&sk_gsw_q2_ntt * &first_row_q2).raw();
 
             // New Attempt: put sk_prod as NTT form, remove the mask, and transform to RAW
-            let sk_prod_ntt = (&sk_gsw_q2_ntt * &first_row_q2);
+            let mut sk_prod_ntt = (&sk_gsw_q2_ntt * &first_row_q2);
             let mut masks_bytes_chunks = masks_bytes.chunks(8);
             for r in 0..sk_prod_ntt.rows {
                 for c in 0..sk_prod_ntt.cols {
