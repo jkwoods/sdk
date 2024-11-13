@@ -892,6 +892,7 @@ impl<'a> Client<'a> {
                     let poly = sk_prod_ntt.get_poly_mut(r, c);
                     for z in 0..poly.len() {
                         // remove mask
+                        println!("poly[z]: {:?}", poly[z]);
                         poly[z] = (poly[z]
                             - (compose_bytes(
                                 masks_bytes_chunks.next().unwrap(),
