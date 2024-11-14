@@ -831,7 +831,11 @@ impl<'a> Client<'a> {
         result.to_vec(p_bits as usize, params.modp_words_per_chunk())
     }
 
-    pub fn modified_decode_response_ntt(&self, data: &[u8], masks_bytes: Vec<u8>) -> Vec<u8> {
+    pub fn modified_decode_response_polyraw(
+        &self,
+        data: &[u8],
+        mask: PolyMatrixNTT<'a>,
+    ) -> PolyMatrixRaw<'a> {
         /*
             0. NTT over q2 the secret key
 
@@ -867,7 +871,6 @@ impl<'a> Client<'a> {
             let mut first_row = PolyMatrixRaw::zero(&q2_params, 1, params.n);
             let mut rest_rows = PolyMatrixRaw::zero(&params, params.n, params.n);
             for i in 0..params.n * params.poly_len {
-                // read_arbtrary_bits parse data (in bytes) to raw poly
                 first_row.data[i] = read_arbitrary_bits(data, bit_offs, q2_bits);
                 bit_offs += q2_bits;
             }
@@ -877,31 +880,9 @@ impl<'a> Client<'a> {
             }
 
             let mut first_row_q2 = PolyMatrixNTT::zero(&q2_params, 1, params.n);
-            // Copy first_row to first_row_q2 in NTT form
             to_ntt(&mut first_row_q2, &first_row);
 
-            // Multiplication in NTT form, and transform to RAW
-            // let sk_prod = (&sk_gsw_q2_ntt * &first_row_q2).raw();
-
-            // New Attempt: put sk_prod as NTT form, remove the mask, and transform to RAW
-            let mut sk_prod_ntt = (&sk_gsw_q2_ntt * &first_row_q2);
-            let mut masks_bytes_chunks = masks_bytes.chunks(8);
-            for r in 0..sk_prod_ntt.rows {
-                for c in 0..sk_prod_ntt.cols {
-                    // Poly is a mut pointer 
-                    let poly = sk_prod_ntt.get_poly_mut(r, c);
-                    for z in 0..poly.len() {
-                        // remove mask
-                        println!("poly[z]: {:?}", poly[z]);
-                        poly[z] = (poly[z]
-                            - (compose_bytes(
-                                masks_bytes_chunks.next().unwrap(),
-                            ) % params.pt_modulus))
-                            % params.pt_modulus;
-                    }
-                }
-            }
-            let mut sk_prod = sk_prod_ntt.raw();
+            let sk_prod = (&sk_gsw_q2_ntt * &first_row_q2).raw();
 
             let q1_i64 = q1 as i64;
             let q2_i64 = q2 as i64;
@@ -930,8 +911,8 @@ impl<'a> Client<'a> {
             }
         }
 
-        // println!("{:?}", result.data.as_slice().to_vec());
-        result.to_vec(p_bits as usize, params.modp_words_per_chunk())
+        result
+        //result.to_vec(p_bits as usize, params.modp_words_per_chunk())
     }
 
     pub fn modified_decode_response(&self, data: &[u8], masks_bytes: Vec<u8>) -> Vec<u8> {
