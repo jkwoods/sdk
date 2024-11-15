@@ -801,12 +801,12 @@ impl<'a> Client<'a> {
                     //.raw()
                     //.to_vec(p_bits as usize, self.spiral_params.modp_words_per_chunk());
 
-                    println!("REST ROWS[{}, {}] len {} = {:#?}", r, c, poly.len(), poly);
+                    /*         println!("REST ROWS[{}, {}] len {} = {:#?}", r, c, poly.len(), poly);
                     for p in 0..poly.len() {
                         if (params.moduli[0] < poly[p]) {
                             println!("not less than q1");
                         }
-                    }
+                    }*/
                 }
             }
 
