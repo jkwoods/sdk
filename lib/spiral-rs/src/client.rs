@@ -751,7 +751,7 @@ impl<'a> Client<'a> {
         full_query_buf
     }
 
-    pub fn decode_response(&self, data: &[u8]) -> Vec<u8> {
+    pub fn decode_response(&self, data: &[u8]) -> PolyMatrixRaw<'a> {
         /*
             0. NTT over q2 the secret key
 
@@ -843,7 +843,7 @@ impl<'a> Client<'a> {
         }
 
         // println!("{:?}", result.data.as_slice().to_vec());
-        result.to_vec(p_bits as usize, params.modp_words_per_chunk())
+        result //.to_vec(p_bits as usize, params.modp_words_per_chunk())
     }
 
     pub fn modified_decode_response(&self, data: &[u8], masks_bytes: Vec<u8>) -> Vec<u8> {
